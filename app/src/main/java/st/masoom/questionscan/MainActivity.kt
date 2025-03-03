@@ -55,17 +55,22 @@ class MainActivity : ComponentActivity() {
 }
 @Composable
 fun ImageTextExtractor() {
-    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedImages by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var extractedText by remember { mutableStateOf("Extracted text will appear here.") }
     var pdfFilePath by remember { mutableStateOf<String?>(null) }
     var fileName by remember { mutableStateOf(TextFieldValue("")) }
     val context = LocalContext.current
 
     val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        selectedImageUri = uri
-        uri?.let { processImage(it, context) { text -> extractedText = text } }
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        selectedImages = uris
+        if (uris.isNotEmpty()) {
+            extractedText = "Extracting text from ${uris.size} images..."
+            processMultipleImages(uris, context) { text ->
+                extractedText = text.ifEmpty { "No text found in selected images." }
+            }
+        }
     }
 
     LazyColumn(
@@ -86,23 +91,20 @@ fun ImageTextExtractor() {
             Spacer(modifier = Modifier.height(20.dp))
         }
 
-        item {
-            // Show Image if Uploaded
-            selectedImageUri?.let { uri ->
-                Image(
-                    painter = rememberAsyncImagePainter(uri),
-                    contentDescription = "Selected Image",
-                    modifier = Modifier
-                        .size(250.dp)
-                        .padding(8.dp)
-                )
-            }
-            Spacer(modifier = Modifier.height(20.dp))
+        items(selectedImages.size) { index ->
+            Image(
+                painter = rememberAsyncImagePainter(selectedImages[index]),
+                contentDescription = "Selected Image",
+                modifier = Modifier
+                    .size(250.dp)
+                    .padding(8.dp)
+            )
         }
-
         item {
+            Spacer(modifier = Modifier.height(20.dp))
+
             // Show Extracted Text
-            if (selectedImageUri != null) {
+            if (selectedImages.isNotEmpty()) {
                 Text(
                     text = extractedText,
                     fontSize = 16.sp,
@@ -146,19 +148,36 @@ fun ImageTextExtractor() {
     }
 }
 
-
-fun processImage(uri: Uri, context: Context, onTextExtracted: (String) -> Unit) {
-    val image: InputImage = InputImage.fromFilePath(context, uri)
+// Process Multiple Images for Text Recognition
+fun processMultipleImages(uris: List<Uri>, context: Context, onTextExtracted: (String) -> Unit) {
     val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    val extractedTexts = mutableListOf<String>()
 
-    recognizer.process(image)
-        .addOnSuccessListener { visionText ->
-            onTextExtracted(visionText.text.ifEmpty { "No text found." })
+    uris.forEachIndexed { index, uri ->
+        try {
+            val image = InputImage.fromFilePath(context, uri)
+            recognizer.process(image)
+                .addOnSuccessListener { visionText ->
+                    extractedTexts.add("Image ${index + 1}:\n${visionText.text}")
+                    if (extractedTexts.size == uris.size) {
+                        onTextExtracted(extractedTexts.joinToString("\n\n"))
+                    }
+                }
+                .addOnFailureListener { e ->
+                    extractedTexts.add("Image ${index + 1}: Error extracting text.")
+                    if (extractedTexts.size == uris.size) {
+                        onTextExtracted(extractedTexts.joinToString("\n\n"))
+                    }
+                }
+        } catch (e: Exception) {
+            extractedTexts.add("Image ${index + 1}: Error processing image.")
+            if (extractedTexts.size == uris.size) {
+                onTextExtracted(extractedTexts.joinToString("\n\n"))
+            }
         }
-        .addOnFailureListener { e ->
-            onTextExtracted("Error: ${e.localizedMessage}")
-        }
+    }
 }
+
 // Save Extracted Text as a PDF with a custom name
 fun saveAsPDF(context: Context, text: String, fileName: String): String? {
     return try {
