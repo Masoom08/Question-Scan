@@ -27,9 +27,20 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import android.content.Context
+import android.content.Intent
+import android.os.Environment
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.TextFieldValue
+import com.itextpdf.kernel.pdf.PdfWriter
+import com.itextpdf.layout.Document
+import com.itextpdf.layout.element.Paragraph
+//import org.apache.poi.xwpf.usermodel.XWPFDocument
+import java.io.File
+import java.io.FileOutputStream
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -46,6 +57,8 @@ class MainActivity : ComponentActivity() {
 fun ImageTextExtractor() {
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
     var extractedText by remember { mutableStateOf("Extracted text will appear here.") }
+    var pdfFilePath by remember { mutableStateOf<String?>(null) }
+    var fileName by remember { mutableStateOf(TextFieldValue("")) }
     val context = LocalContext.current
 
     val launcher = rememberLauncherForActivityResult(
@@ -55,43 +68,84 @@ fun ImageTextExtractor() {
         uri?.let { processImage(it, context) { text -> extractedText = text } }
     }
 
-    Column(
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Button(
-            onClick = { launcher.launch("image/*") },
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3498DB))
-        ) {
-            Text("Upload Image", fontSize = 18.sp, color = Color.White)
+        item {
+            // Upload Image Button
+            Button(
+                onClick = { launcher.launch("image/*") },
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3498DB))
+            ) {
+                Text("Upload Image", fontSize = 18.sp, color = Color.White)
+            }
+            Spacer(modifier = Modifier.height(20.dp))
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
-
-        selectedImageUri?.let { uri ->
-            Image(
-                painter = rememberAsyncImagePainter(uri),
-                contentDescription = "Selected Image",
-                modifier = Modifier
-                    .size(250.dp)
-                    .padding(8.dp)
-            )
+        item {
+            // Show Image if Uploaded
+            selectedImageUri?.let { uri ->
+                Image(
+                    painter = rememberAsyncImagePainter(uri),
+                    contentDescription = "Selected Image",
+                    modifier = Modifier
+                        .size(250.dp)
+                        .padding(8.dp)
+                )
+            }
+            Spacer(modifier = Modifier.height(20.dp))
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        item {
+            // Show Extracted Text
+            if (selectedImageUri != null) {
+                Text(
+                    text = extractedText,
+                    fontSize = 16.sp,
+                    color = Color.Black,
+                    modifier = Modifier.padding(16.dp)
+                )
+                Spacer(modifier = Modifier.height(20.dp))
 
-        Text(
-            text = extractedText,
-            fontSize = 16.sp,
-            color = Color.Black,
-            modifier = Modifier.padding(16.dp)
-        )
+                // Enter File Name
+                OutlinedTextField(
+                    value = fileName,
+                    onValueChange = { fileName = it },
+                    label = { Text("Enter File Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // Save as PDF Button
+                Button(
+                    onClick = {
+                        val safeFileName = if (fileName.text.isBlank()) "ExtractedText.pdf"
+                        else "${fileName.text}.pdf"
+                        pdfFilePath = saveAsPDF(context, extractedText, safeFileName)
+                    }
+                ) {
+                    Text("Save as PDF")
+                }
+            }
+            Spacer(modifier = Modifier.height(20.dp))
+        }
+
+        item {
+            // Download PDF Button after PDF is Saved
+            pdfFilePath?.let { path ->
+                Button(onClick = { openPDF(context, path) }) {
+                    Text("Download PDF")
+                }
+            }
+        }
     }
 }
+
 
 fun processImage(uri: Uri, context: Context, onTextExtracted: (String) -> Unit) {
     val image: InputImage = InputImage.fromFilePath(context, uri)
@@ -104,4 +158,35 @@ fun processImage(uri: Uri, context: Context, onTextExtracted: (String) -> Unit) 
         .addOnFailureListener { e ->
             onTextExtracted("Error: ${e.localizedMessage}")
         }
+}
+// Save Extracted Text as a PDF with a custom name
+fun saveAsPDF(context: Context, text: String, fileName: String): String? {
+    return try {
+        val file = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            fileName
+        )
+        val pdfWriter = PdfWriter(FileOutputStream(file))
+        val pdfDocument = com.itextpdf.kernel.pdf.PdfDocument(pdfWriter)
+        val document = Document(pdfDocument)
+        document.add(Paragraph(text))
+        document.close()
+
+        Toast.makeText(context, "Saved as $fileName in Downloads", Toast.LENGTH_LONG).show()
+        file.absolutePath
+    } catch (e: Exception) {
+        Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+        null
+    }
+}
+
+// Open the Saved PDF File
+fun openPDF(context: Context, filePath: String) {
+    val file = File(filePath)
+    val uri = Uri.fromFile(file)
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(uri, "application/pdf")
+        flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK
+    }
+    context.startActivity(Intent.createChooser(intent, "Open PDF"))
 }
