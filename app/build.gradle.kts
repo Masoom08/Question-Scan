@@ -52,6 +52,10 @@ dependencies {
     // Apache POI for .docx file creation
     //implementation("org.apache.poi:poi-ooxml:5.2.3")
 
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.2") // Jetpack Compose ViewModel
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2") // ViewModel with Kotlin coroutines
+
+    //implementation("com.google.ai.client.generativeai:generativeai:0.6.0") // Gemini AI SDK
 
 
     implementation(libs.androidx.core.ktx)
@@ -62,6 +66,7 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+    implementation(libs.firebase.vertexai)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
